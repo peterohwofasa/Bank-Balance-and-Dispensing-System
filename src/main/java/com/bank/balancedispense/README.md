@@ -1,64 +1,69 @@
-# 💳 Bank Balance and Dispensing System
+# 💳 Bank Balance and Dispensing System (Version 2)
 
-This Spring Boot backend simulates ATM functionality for Discovery Bank, allowing clients to:
+This Spring Boot backend simulates ATM functionality for Discovery Bank, offering clients:
 
-- ✅ View **transactional** and **currency account balances** (with Rand conversions)
-- ✅ Perform **cash withdrawals** from transactional accounts
-- ✅ Retrieve **dispensed denominations**
-- ✅ Generate SQL-based **financial reports**
+- ✅ **Transactional and currency balance display** with ZAR conversions
+- ✅ **ATM cash withdrawals** with optimal denomination calculation
+- ✅ **Fallback suggestions** if exact note match is unavailable
+- ✅ **SQL-based financial reports** for account position analysis
+- ✅ **Structured error handling** with standardized response blocks
 
 ---
 
-## 🛠️ Technologies Used
+## 🛠️ Tech Stack
 
 - Java 17
 - Spring Boot 3.2+
-- Spring Data JPA
-- H2 In-Memory Database
+- Spring Data JPA + H2 In-Memory DB
 - SpringDoc OpenAPI (Swagger UI)
-- Lombok
-- JUnit, Mockito
-- Testcontainers (optional)
+- JUnit, Mockito, Testcontainers
+- Maven, Lombok
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Setup & Run
 
 ### ✅ Prerequisites
 
 - Java 17+
 - Maven 3.8+
-- IDE (IntelliJ / VS Code)
 
-### ▶️ Run Locally
+### ▶️ Launch Application
 
 ```bash
-# Run Spring Boot application
 mvn spring-boot:run
 ```
 
-Access H2 console: [http://localhost:8080/h2-console](http://localhost:8080/h2-console)
+- Swagger UI: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+- H2 Console: [http://localhost:8080/h2-console](http://localhost:8080/h2-console)
+
+> Default DB: `jdbc:h2:mem:bankdb`  
+> Username: `sa` (no password)
 
 ---
 
-## 🔍 API Endpoints
+## 🔍 API Reference
 
-Base URL: `http://localhost:8080/discovery-atm`
+### Base URL
 
-### 💼 Balance APIs
+```
+http://localhost:8080/discovery-atm
+```
 
-| Method | Endpoint                                 | Description                                              |
-|--------|------------------------------------------|----------------------------------------------------------|
-| GET    | `/queryTransactionalBalances?clientId=1` | View transactional account balances (descending order)   |
-| GET    | `/queryCcyBalances?clientId=1`           | View currency balances with converted Rand (ascending)   |
+### 📘 Balance APIs
 
-### 💸 Withdraw API
+| Method | Endpoint                                 | Description                                             |
+|--------|------------------------------------------|---------------------------------------------------------|
+| GET    | `/queryTransactionalBalances?clientId=1` | View transactional account balances (descending ZAR)    |
+| GET    | `/queryCcyBalances?clientId=1`           | View currency account balances (ascending ZAR)          |
 
-| Method | Endpoint      | Description                         |
-|--------|---------------|-------------------------------------|
-| POST   | `/withdraw`   | Withdraw cash and get denominations |
+### 💸 Withdrawal API
 
-#### Example Withdraw Request
+| Method | Endpoint    | Description                                     |
+|--------|-------------|-------------------------------------------------|
+| POST   | `/withdraw` | Withdraw funds and receive note denominations  |
+
+#### 🔽 Sample Withdraw Request
 
 ```json
 {
@@ -71,99 +76,109 @@ Base URL: `http://localhost:8080/discovery-atm`
 
 ---
 
-## 📊 SQL Reports
+## 🧾 Structured API Responses
 
-### 1. Highest Transactional Account Per Client
+All responses include a top-level `result` block:
+
+```json
+"result": {
+  "success": true,
+  "statusCode": 200,
+  "statusReason": "Withdrawal completed successfully",
+  "fallbackAmount": null
+}
+```
+
+---
+
+## 📊 SQL Reporting
+
+### 1. Transactional Account with Highest Balance
 
 ```sql
-SELECT c.id AS client_id, c.surname, a.account_number, a.description, a.balance
-FROM client c
-JOIN account a ON c.id = a.client_id
-WHERE a.account_type = 'TRANSACTIONAL'
-  AND a.balance = (
-    SELECT MAX(balance)
-    FROM account a2
-    WHERE a2.client_id = c.id AND a2.account_type = 'TRANSACTIONAL'
+SELECT
+    C.ID AS CLIENT_ID,
+    C.SURNAME,
+    A.CLIENT_ACCOUNT_NUMBER,
+    A.DISPLAY_BALANCE
+FROM CLIENT C
+JOIN CLIENT_ACCOUNT A ON C.ID = A.CLIENT_ID
+JOIN ACCOUNT_TYPE T ON A.ACCOUNT_TYPE_CODE = T.ACCOUNT_TYPE_CODE
+WHERE T.TRANSACTIONAL = TRUE
+  AND A.DISPLAY_BALANCE = (
+    SELECT MAX(A2.DISPLAY_BALANCE)
+    FROM CLIENT_ACCOUNT A2
+    JOIN ACCOUNT_TYPE T2 ON A2.ACCOUNT_TYPE_CODE = T2.ACCOUNT_TYPE_CODE
+    WHERE A2.CLIENT_ID = C.ID AND T2.TRANSACTIONAL = TRUE
 );
 ```
 
 ### 2. Aggregate Financial Position
 
 ```sql
-SELECT CONCAT(c.title, ' ', c.name, ' ', c.surname) AS client,
-       SUM(CASE WHEN a.account_type = 'LOAN' THEN a.balance ELSE 0 END) AS loan_balance,
-       SUM(CASE WHEN a.account_type = 'TRANSACTIONAL' THEN a.balance ELSE 0 END) AS transactional_balance,
-       SUM(CASE WHEN a.account_type IN ('TRANSACTIONAL', 'LOAN') THEN a.balance ELSE 0 END) AS net_position
-FROM client c
-JOIN account a ON c.id = a.client_id
-GROUP BY c.id, c.title, c.name, c.surname;
+SELECT
+    CONCAT(C.TITLE, ' ', C.NAME, ' ', C.SURNAME) AS CLIENT,
+    SUM(CASE WHEN A.ACCOUNT_TYPE_CODE IN ('PLOAN', 'HLOAN') THEN A.DISPLAY_BALANCE ELSE 0 END) AS LOAN_BALANCE,
+    SUM(CASE WHEN T.TRANSACTIONAL = TRUE THEN A.DISPLAY_BALANCE ELSE 0 END) AS TRANSACTIONAL_BALANCE,
+    SUM(CASE WHEN A.ACCOUNT_TYPE_CODE IN ('PLOAN', 'HLOAN') OR T.TRANSACTIONAL = TRUE THEN A.DISPLAY_BALANCE ELSE 0 END) AS NET_POSITION
+FROM CLIENT C
+JOIN CLIENT_ACCOUNT A ON C.ID = A.CLIENT_ID
+JOIN ACCOUNT_TYPE T ON A.ACCOUNT_TYPE_CODE = T.ACCOUNT_TYPE_CODE
+GROUP BY C.ID, C.TITLE, C.NAME, C.SURNAME;
 ```
 
 ---
 
-## ❗ Exception Handling
+## ❗ Global Exception Handling
 
-Custom exceptions include:
+Handled with `@RestControllerAdvice`, all exceptions return consistent JSON responses.
 
-- `AccountNotFoundException`
-- `ATMNotFoundException`
+**Custom exceptions include:**
+
+- `NoAccountsFoundException`
 - `InsufficientFundsException`
 - `NoteCalculationException`
-- `NoAccountsFoundException`
+- `ATMNotFoundException`
+- `AccountNotFoundException`
 
-Handled globally with `@RestControllerAdvice`.
-
----
-
-## 📚 Swagger UI
-
-Accessible at:
-
-```
-http://localhost:8080/swagger-ui.html
-```
-
-Provides:
-
-- Endpoint summaries
-- Input validation details
-- Sample requests & responses
+Each yields a `result` block with appropriate `statusReason` and optional `fallbackAmount`.
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing Overview
 
 ### ✅ Unit Tests
+
 - `BalanceServiceImplTest`
 - `WithdrawServiceImplTest`
+- `BalanceControllerTest`
+- `WithdrawControllerTest`
 - `NoteCalculatorTest`
 
 ### ✅ Integration Tests
+
 - `BalanceControllerIntegrationTest`
 - `WithdrawControllerIntegrationTest`
 
-Run all tests with:
-
 ```bash
+# Run full test suite
 mvn test
 ```
 
 ---
 
-## 🔮 Optional Future Enhancements
+## 📂 Repository
 
-- JWT-based user authentication
-- Docker containerization
-- Admin reporting dashboard
-- Externalized currency service (REST/DB)
+> [GitHub – Bank Balance and Dispensing System](https://github.com/peterohwofasa/Bank-Balance-and-Dispensing-System.git)
 
 ---
 
-## 📂 GitHub Repository
+## 📌 Notes
 
-Project source code is hosted at:
-
-👉 [https://github.com/peterohwofasa/Bank-Balance-and-Dispensing-System.git](https://github.com/peterohwofasa/Bank-Balance-and-Dispensing-System.git)
+- H2 schema uses `IDENTITY` strategy per version 2.2.x+ compatibility.
+- All currency conversions and overdraft logic handled dynamically.
+- Result wrapping and error messaging support future extensibility.
+- Swagger/OpenAPI 3 used for API documentation.
 
 ---
 
@@ -171,10 +186,10 @@ Project source code is hosted at:
 
 **Peter Ohwofasa**  
 Pretoria, South Africa  
-[LinkedIn](https://www.linkedin.com/in/peter-ohwofasa/)
+[LinkedIn Profile](https://www.linkedin.com/in/peter-ohwofasa/)
 
 ---
 
 ## 📄 License
 
-This project is developed for Discovery Bank technical evaluation purposes.
+This codebase is intended for Discovery Bank technical assessment only.

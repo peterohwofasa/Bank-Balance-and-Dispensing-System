@@ -2,11 +2,10 @@ package com.bank.balancedispense.services.impl;
 
 import com.bank.balancedispense.common.Constants;
 import com.bank.balancedispense.dto.*;
-import com.bank.balancedispense.entities.Account;
 import com.bank.balancedispense.entities.Client;
-import com.bank.balancedispense.enums.AccountType;
+import com.bank.balancedispense.entities.ClientAccount;
 import com.bank.balancedispense.exceptions.NoAccountsFoundException;
-import com.bank.balancedispense.repository.AccountRepository;
+import com.bank.balancedispense.repository.ClientAccountRepository;
 import com.bank.balancedispense.repository.ClientRepository;
 import com.bank.balancedispense.services.BalanceService;
 import com.bank.balancedispense.util.CurrencyConversionUtil;
@@ -20,26 +19,28 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Implementation of BalanceService.
- * Handles retrieval of transactional and currency accounts.
+ * Service implementation for retrieving client account balances.
+ * Uses the normalized schema with ClientAccount, AccountType, and Currency mappings.
  */
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class BalanceServiceImpl implements BalanceService {
 
-    private final AccountRepository accountRepo;
+    private final ClientAccountRepository accountRepo;
     private final ClientRepository clientRepo;
     private final CurrencyConversionUtil currencyUtil;
 
     /**
-     * Returns a wrapped response of transactional accounts with client and status info.
+     * Retrieves all transactional accounts for the given client.
+     * Sorted descending by balance.
      */
     @Override
     public TransactionalBalanceResponseWrapper getTransactionalBalances(Long clientId) {
         log.info("Fetching transactional balances for clientId={}", clientId);
 
-        List<Account> accounts = accountRepo.findByClientIdAndAccountType(clientId, AccountType.TRANSACTIONAL);
+        // Filter by account types that are marked transactional = true
+        List<ClientAccount> accounts = accountRepo.findByClientIdAndAccountTypeTransactional(clientId, true);
         if (accounts.isEmpty()) {
             throw new NoAccountsFoundException("No transactional accounts to display");
         }
@@ -50,33 +51,39 @@ public class BalanceServiceImpl implements BalanceService {
         ClientDto clientDto = new ClientDto(client.getId(), client.getTitle(), client.getName(), client.getSurname());
 
         List<TransactionalAccountDto> accountDtos = accounts.stream()
-                .sorted(Comparator.comparingDouble(Account::getBalance).reversed())
-                .map(acc -> new TransactionalAccountDto(
-                        acc.getAccountNumber(),
-                        acc.getAccountType().name(),
-                        "Transactional Account",
-                        acc.getCurrency().name(),
-                        BigDecimal.valueOf(currencyUtil.getConversionRate(acc.getCurrency())),
-                        BigDecimal.valueOf(acc.getBalance()),
-                        BigDecimal.valueOf(acc.getBalance()),
-                        BigDecimal.ZERO
-                ))
+                .sorted(Comparator.comparing(ClientAccount::getDisplayBalance).reversed())
+                .map(acc -> {
+                    BigDecimal rate = currencyUtil.getConversionRate(acc.getCurrency().getCode());
+                    BigDecimal balance = acc.getDisplayBalance();
+                    BigDecimal zarBalance = balance.multiply(rate);
+
+                    return new TransactionalAccountDto(
+                            acc.getAccountNumber(),
+                            acc.getAccountType().getCode(),
+                            acc.getAccountType().getDescription(),
+                            acc.getCurrency().getCode(),
+                            rate,
+                            balance,
+                            zarBalance,
+                            BigDecimal.ZERO
+                    );
+                })
                 .collect(Collectors.toList());
 
         ResultDto result = new ResultDto(true, 200, "Transactional balances retrieved successfully");
-
         return new TransactionalBalanceResponseWrapper(clientDto, accountDtos, result);
     }
 
     /**
-     * Returns sorted currency accounts with conversion to ZAR.
-     * Throws NoAccountsFoundException if none exist.
+     * Retrieves all currency accounts for the client and converts them to ZAR.
+     * Sorted ascending by converted value.
      */
     @Override
     public CurrencyBalanceResponseWrapper getCurrencyBalances(Long clientId) {
         log.info("Fetching currency balances for clientId={}", clientId);
 
-        List<Account> accounts = accountRepo.findByClientIdAndAccountType(clientId, AccountType.CURRENCY);
+        // Filter by account types where transactional = false
+        List<ClientAccount> accounts = accountRepo.findByClientIdAndAccountTypeTransactional(clientId, false);
         if (accounts.isEmpty()) {
             throw new NoAccountsFoundException("No currency accounts to display");
         }
@@ -88,20 +95,19 @@ public class BalanceServiceImpl implements BalanceService {
 
         List<CurrencyBalanceResponse> currencyResponses = accounts.stream()
                 .map(acc -> {
-                    BigDecimal rate = BigDecimal.valueOf(currencyUtil.getConversionRate(acc.getCurrency()));
-                    BigDecimal balance = BigDecimal.valueOf(acc.getBalance());
+                    BigDecimal rate = currencyUtil.getConversionRate(acc.getCurrency().getCode());
+                    BigDecimal balance = acc.getDisplayBalance();
                     BigDecimal converted = balance.multiply(rate);
 
-                    // Use defined overdraft limit logic if applicable
-                    BigDecimal accountLimit = acc.getAccountType() == AccountType.TRANSACTIONAL
-                            ? BigDecimal.valueOf(Math.abs(Constants.OVERDRAFT_LIMIT)) // 10000.0
+                    BigDecimal accountLimit = acc.getAccountType().isTransactional()
+                            ? BigDecimal.valueOf(Math.abs(Constants.OVERDRAFT_LIMIT))
                             : BigDecimal.ZERO;
 
                     return new CurrencyBalanceResponse(
                             acc.getAccountNumber(),
-                            acc.getAccountType().name(),
+                            acc.getAccountType().getCode(),
                             acc.getAccountType().getDescription(),
-                            acc.getCurrency().name(),
+                            acc.getCurrency().getCode(),
                             rate,
                             balance,
                             converted,
@@ -111,10 +117,7 @@ public class BalanceServiceImpl implements BalanceService {
                 .sorted(Comparator.comparing(CurrencyBalanceResponse::zarBalance))
                 .toList();
 
-
         ResultDto result = new ResultDto(true, 200, "Currency balances retrieved successfully");
-
         return new CurrencyBalanceResponseWrapper(clientDto, currencyResponses, result);
     }
-
 }

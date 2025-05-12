@@ -1,38 +1,40 @@
 package com.bank.balancedispense.util;
 
-import com.bank.balancedispense.enums.Currency;
-import org.springframework.beans.factory.annotation.Value;
+import com.bank.balancedispense.entities.CurrencyConversionRate;
+import com.bank.balancedispense.repository.CurrencyConversionRateRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 /**
- * Utility component that provides currency-to-ZAR conversion rates.
- *
- * Rates are injected via application properties and used during currency balance evaluation.
+ * Utility that provides currency-to-ZAR conversion using the database-backed currency conversion rate table.
  */
 @Component
+@RequiredArgsConstructor
 public class CurrencyConversionUtil {
 
-    /** Injected conversion rate for USD to ZAR */
-    @Value("${currency.rate.usd}")
-    private double usdRate;
-
-    /** Injected conversion rate for EUR to ZAR */
-    @Value("${currency.rate.eur}")
-    private double eurRate;
+    private final CurrencyConversionRateRepository rateRepo;
 
     /**
-     * Returns the ZAR conversion rate for a supported currency.
+     * Returns the ZAR conversion rate for the given currency code.
      *
-     * @param currency The currency to convert from
-     * @return Conversion rate to ZAR
-     * @throws IllegalArgumentException if the currency is unsupported
+     * @param currencyCode The 3-letter ISO currency code (e.g. "USD", "EUR", "ZAR")
+     * @return Conversion rate to ZAR as BigDecimal
      */
-    public double getConversionRate(Currency currency) {
-        return switch (currency) {
-            case USD -> usdRate;
-            case EUR -> eurRate;
-            case ZAR -> 1.0;
-            default -> throw new IllegalArgumentException("Unsupported currency: " + currency);
+    public BigDecimal getConversionRate(String currencyCode) {
+        if (currencyCode.equalsIgnoreCase("ZAR")) {
+            return BigDecimal.ONE;
+        }
+
+        CurrencyConversionRate rate = rateRepo.findById(currencyCode.toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported currency: " + currencyCode));
+
+        return switch (rate.getConversionIndicator()) {
+            case "*" -> rate.getRate();
+            case "/" -> BigDecimal.ONE.divide(rate.getRate(), 8, RoundingMode.HALF_UP);
+            default -> throw new IllegalStateException("Invalid conversion indicator for " + currencyCode);
         };
     }
 }

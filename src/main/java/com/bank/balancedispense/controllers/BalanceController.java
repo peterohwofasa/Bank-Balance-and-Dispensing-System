@@ -2,7 +2,9 @@ package com.bank.balancedispense.controllers;
 
 import com.bank.balancedispense.dto.CurrencyBalanceResponseWrapper;
 import com.bank.balancedispense.dto.ErrorResponse;
+import com.bank.balancedispense.dto.ResultDto;
 import com.bank.balancedispense.dto.TransactionalBalanceResponseWrapper;
+import com.bank.balancedispense.exceptions.NoAccountsFoundException;
 import com.bank.balancedispense.services.BalanceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -18,6 +20,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * REST controller for retrieving client account balances.
+ * Provides transactional and currency balance lookups.
+ */
 @RestController
 @RequestMapping("/discovery-atm")
 @Validated
@@ -63,5 +69,15 @@ public class BalanceController {
             @Parameter(description = "Client ID", required = true, example = "12345")
             @RequestParam @Min(1) Long clientId) {
         return ResponseEntity.ok(balanceService.getCurrencyBalances(clientId));
+    }
+
+    /**
+     * Handles cases where no qualifying accounts were found for a client.
+     */
+    @ExceptionHandler(NoAccountsFoundException.class)
+    public ResponseEntity<ResultDto> handleNoAccountsFound(NoAccountsFoundException ex) {
+        return ResponseEntity.badRequest().body(
+                new ResultDto(false, 400, ex.getMessage())
+        );
     }
 }

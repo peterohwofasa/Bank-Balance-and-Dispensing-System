@@ -1,7 +1,25 @@
-SELECT CONCAT(c.title, ' ', c.name, ' ', c.surname) AS client,
-       SUM(CASE WHEN a.account_type = 'LOAN' THEN a.balance ELSE 0 END) AS loan_balance,
-       SUM(CASE WHEN a.account_type = 'TRANSACTIONAL' THEN a.balance ELSE 0 END) AS transactional_balance,
-       SUM(CASE WHEN a.account_type IN ('TRANSACTIONAL', 'LOAN') THEN a.balance ELSE 0 END) AS net_position
-FROM client c
-         JOIN account a ON c.id = a.client_id
-GROUP BY c.id, c.title, c.name, c.surname;
+SELECT
+    CONCAT(C.TITLE, ' ', C.NAME, ' ', C.SURNAME) AS CLIENT,
+
+    SUM(CASE
+            WHEN A.ACCOUNT_TYPE_CODE IN ('PLOAN', 'HLOAN')
+                THEN A.DISPLAY_BALANCE
+            ELSE 0
+        END) AS LOAN_BALANCE,
+
+    SUM(CASE
+            WHEN T.TRANSACTIONAL = TRUE
+                THEN A.DISPLAY_BALANCE
+            ELSE 0
+        END) AS TRANSACTIONAL_BALANCE,
+
+    SUM(CASE
+            WHEN A.ACCOUNT_TYPE_CODE IN ('PLOAN', 'HLOAN') OR T.TRANSACTIONAL = TRUE
+                THEN A.DISPLAY_BALANCE
+            ELSE 0
+        END) AS NET_POSITION
+
+FROM CLIENT C
+         JOIN CLIENT_ACCOUNT A ON C.ID = A.CLIENT_ID
+         JOIN ACCOUNT_TYPE T ON A.ACCOUNT_TYPE_CODE = T.ACCOUNT_TYPE_CODE
+GROUP BY C.ID, C.TITLE, C.NAME, C.SURNAME;

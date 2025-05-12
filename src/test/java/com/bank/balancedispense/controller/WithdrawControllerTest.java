@@ -1,7 +1,10 @@
+// Fully updated WithdrawControllerTest with support for fallback and error cases
 package com.bank.balancedispense.controller;
 
 import com.bank.balancedispense.controllers.WithdrawController;
 import com.bank.balancedispense.dto.*;
+import com.bank.balancedispense.exceptions.InsufficientFundsException;
+import com.bank.balancedispense.exceptions.NoteCalculationException;
 import com.bank.balancedispense.services.WithdrawService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -22,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Unit tests for WithdrawController using MockMvc.
- * Validates successful withdrawal operations.
+ * Validates successful withdrawal operations and error scenarios.
  */
 @WebMvcTest(WithdrawController.class)
 public class WithdrawControllerTest {
@@ -36,15 +39,10 @@ public class WithdrawControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    /**
-     * Tests the /discovery-atm/withdraw POST endpoint with valid request data.
-     * Asserts the HTTP response contains the expected enriched response structure.
-     */
     @Test
     void testWithdrawEndpointSuccess() throws Exception {
         WithdrawRequest request = new WithdrawRequest(1L, "TX12345", 200.0, 1L);
 
-        // Construct mock response matching WithdrawResponseWrapper structure
         ClientDto client = new ClientDto(1L, "Mr", "John", "Doe");
         TransactionalAccountDto account = new TransactionalAccountDto(
                 "TX12345",
@@ -59,15 +57,11 @@ public class WithdrawControllerTest {
         List<DenominationDto> denomination = List.of(
                 new DenominationDto(1L, 200, 1)
         );
-
         ResultDto result = new ResultDto(true, 200, "Withdrawal successful");
-
         WithdrawResponseWrapper mockResponse = new WithdrawResponseWrapper(client, account, denomination, result);
 
-        // Mock the service
         when(withdrawService.withdraw(any(WithdrawRequest.class))).thenReturn(mockResponse);
 
-        // Perform POST and assert JSON
         mockMvc.perform(post("/discovery-atm/withdraw")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -81,5 +75,39 @@ public class WithdrawControllerTest {
                 .andExpect(jsonPath("$.result.success").value(true))
                 .andExpect(jsonPath("$.result.statusCode").value(200))
                 .andExpect(jsonPath("$.result.statusReason").value("Withdrawal successful"));
+    }
+
+    @Test
+    void testWithdrawEndpointFailsWithInsufficientFunds() throws Exception {
+        WithdrawRequest request = new WithdrawRequest(1L, "TX12345", 10000.0, 1L);
+
+        when(withdrawService.withdraw(any(WithdrawRequest.class)))
+                .thenThrow(new InsufficientFundsException("Insufficient funds."));
+
+        mockMvc.perform(post("/discovery-atm/withdraw")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.statusCode").value(400))
+                .andExpect(jsonPath("$.statusReason").value("Insufficient funds."))
+                .andExpect(jsonPath("$.fallbackAmount").doesNotExist());
+    }
+
+    @Test
+    void testWithdrawEndpointFailsWithFallbackSuggestion() throws Exception {
+        WithdrawRequest request = new WithdrawRequest(1L, "TX12345", 300.0, 1L);
+
+        when(withdrawService.withdraw(any(WithdrawRequest.class)))
+                .thenThrow(new NoteCalculationException("Amount cannot be dispensed", 250));
+
+        mockMvc.perform(post("/discovery-atm/withdraw")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.statusCode").value(400))
+                .andExpect(jsonPath("$.statusReason").value("Amount cannot be dispensed"))
+                .andExpect(jsonPath("$.fallbackAmount").value(250));
     }
 }

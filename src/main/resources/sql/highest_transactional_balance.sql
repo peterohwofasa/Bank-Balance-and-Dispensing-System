@@ -1,9 +1,15 @@
-SELECT c.id AS client_id, c.surname, a.account_number, a.description, a.balance
-FROM client c
-         JOIN account a ON c.id = a.client_id
-WHERE a.account_type = 'TRANSACTIONAL'
-  AND a.balance = (
-    SELECT MAX(balance)
-    FROM account a2
-    WHERE a2.client_id = c.id AND a2.account_type = 'TRANSACTIONAL'
+SELECT
+    C.ID AS CLIENT_ID,
+    C.SURNAME,
+    A.CLIENT_ACCOUNT_NUMBER,
+    A.DISPLAY_BALANCE
+FROM CLIENT C
+         JOIN CLIENT_ACCOUNT A ON C.ID = A.CLIENT_ID
+         JOIN ACCOUNT_TYPE T ON A.ACCOUNT_TYPE_CODE = T.ACCOUNT_TYPE_CODE
+WHERE T.TRANSACTIONAL = TRUE
+  AND A.DISPLAY_BALANCE = (
+    SELECT MAX(A2.DISPLAY_BALANCE)
+    FROM CLIENT_ACCOUNT A2
+             JOIN ACCOUNT_TYPE T2 ON A2.ACCOUNT_TYPE_CODE = T2.ACCOUNT_TYPE_CODE
+    WHERE A2.CLIENT_ID = C.ID AND T2.TRANSACTIONAL = TRUE
 );

@@ -66,14 +66,15 @@ public class BalanceControllerIntegrationTest {
      * Test that request returns 404 for a non-existent client.
      */
     @Test
-    void shouldReturnNotFoundForUnknownClientId() throws Exception {
+    void shouldReturnBadRequestForUnknownClientId() throws Exception {
         mockMvc.perform(get("/discovery-atm/queryTransactionalBalances")
                         .param("clientId", "999"))
-                .andExpect(status().isNotFound())
+                .andExpect(status().isBadRequest()) // changed from isNotFound()
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.statusCode").value(404))
+                .andExpect(jsonPath("$.statusCode").value(400)) // changed from 404
                 .andExpect(jsonPath("$.statusReason", containsString("No transactional accounts to display")));
     }
+
 
 }

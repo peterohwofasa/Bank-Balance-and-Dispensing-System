@@ -1,13 +1,16 @@
 package com.bank.balancedispense.util;
 
 import com.bank.balancedispense.common.ErrorMessage;
-import com.bank.balancedispense.entities.ATMNote;
+import com.bank.balancedispense.entities.ATMAllocation;
+import com.bank.balancedispense.entities.Denomination;
 import com.bank.balancedispense.exceptions.NoteCalculationException;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -16,14 +19,13 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class NoteCalculatorTest {
 
-
     /**
      * Test that exact amount is calculated using available notes in optimal denominations.
      * Should return 1 x 200 and 1 x 100 for amount 300.
      */
     @Test
     public void testCalculateNotesExactAmount() {
-        List<ATMNote> notes = List.of(
+        List<ATMAllocation> notes = List.of(
                 createNote(200, 5),
                 createNote(100, 5),
                 createNote(50, 5)
@@ -41,7 +43,7 @@ public class NoteCalculatorTest {
      */
     @Test
     public void testCalculateInsufficientNotes_shouldThrowNoteCalculationException() {
-        List<ATMNote> notes = List.of(createNote(100, 0));
+        List<ATMAllocation> notes = List.of(createNote(100, 0));
 
         NoteCalculationException ex = assertThrows(NoteCalculationException.class, () ->
                 NoteCalculator.calculate(100, notes));
@@ -54,7 +56,7 @@ public class NoteCalculatorTest {
      */
     @Test
     public void testNoATMNotesAvailable_shouldThrowNoteCalculationException() {
-        List<ATMNote> notes = List.of();
+        List<ATMAllocation> notes = List.of();
         assertThrows(NoteCalculationException.class, () -> NoteCalculator.calculate(100, notes));
     }
 
@@ -64,14 +66,14 @@ public class NoteCalculatorTest {
      */
     @Test
     public void testSuggestFallbackAmount_returnsClosestLowerDispensable() {
-        List<ATMNote> notes = List.of(
+        List<ATMAllocation> notes = List.of(
                 createNote(100, 1),
                 createNote(50, 1)
         );
 
         Optional<Integer> fallback = NoteCalculator.suggestFallbackAmount(300, notes);
         assertTrue(fallback.isPresent());
-        assertEquals(150, fallback.get()); // Only 100 + 50 is possible
+        assertEquals(150, fallback.get());
     }
 
     /**
@@ -80,18 +82,22 @@ public class NoteCalculatorTest {
      */
     @Test
     public void testSuggestFallbackAmount_noneAvailable_returnsEmpty() {
-        List<ATMNote> notes = List.of(createNote(50, 0));
+        List<ATMAllocation> notes = List.of(createNote(50, 0));
         Optional<Integer> fallback = NoteCalculator.suggestFallbackAmount(100, notes);
         assertTrue(fallback.isEmpty());
     }
 
     /**
-     * Utility method to construct ATMNote test data.
+     * Utility method to construct ATMAllocation test data with Denomination entity.
      */
-    private ATMNote createNote(int denomination, int quantity) {
-        ATMNote note = new ATMNote();
+    private ATMAllocation createNote(int denominationValue, int quantity) {
+        Denomination denomination = new Denomination();
+        denomination.setValue(BigDecimal.valueOf(denominationValue));
+
+        ATMAllocation note = new ATMAllocation();
         note.setDenomination(denomination);
         note.setQuantity(quantity);
+
         return note;
     }
 }

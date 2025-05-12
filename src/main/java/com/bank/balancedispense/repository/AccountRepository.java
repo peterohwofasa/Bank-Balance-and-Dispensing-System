@@ -1,7 +1,7 @@
 package com.bank.balancedispense.repository;
 
 import com.bank.balancedispense.entities.Account;
-import com.bank.balancedispense.enums.AccountType;
+import com.bank.balancedispense.entities.AccountType;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

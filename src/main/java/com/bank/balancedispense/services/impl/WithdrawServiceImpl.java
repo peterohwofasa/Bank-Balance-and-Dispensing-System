@@ -3,19 +3,9 @@ package com.bank.balancedispense.services.impl;
 import com.bank.balancedispense.common.Constants;
 import com.bank.balancedispense.common.ErrorMessage;
 import com.bank.balancedispense.dto.*;
-import com.bank.balancedispense.entities.ATM;
-import com.bank.balancedispense.entities.ATMNote;
-import com.bank.balancedispense.entities.Account;
-import com.bank.balancedispense.entities.Client;
-import com.bank.balancedispense.enums.AccountType;
-import com.bank.balancedispense.exceptions.ATMNotFoundException;
-import com.bank.balancedispense.exceptions.AccountNotFoundException;
-import com.bank.balancedispense.exceptions.InsufficientFundsException;
-import com.bank.balancedispense.exceptions.NoteCalculationException;
-import com.bank.balancedispense.repository.ATMNoteRepository;
-import com.bank.balancedispense.repository.AccountRepository;
-import com.bank.balancedispense.repository.ATMRepository;
-import com.bank.balancedispense.repository.ClientRepository;
+import com.bank.balancedispense.entities.*;
+import com.bank.balancedispense.exceptions.*;
+import com.bank.balancedispense.repository.*;
 import com.bank.balancedispense.services.WithdrawService;
 import com.bank.balancedispense.util.CurrencyConversionUtil;
 import com.bank.balancedispense.util.NoteCalculator;
@@ -31,23 +21,23 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Implementation of WithdrawService.
- * Handles ATM note dispensing and account balance updates.
+ * Refactored implementation of WithdrawService.
+ * Now aligned with Version 2 schema using normalized DB entities.
  */
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class WithdrawServiceImpl implements WithdrawService {
 
-    private final AccountRepository accountRepo;
-    private final ATMNoteRepository atmNoteRepo;
+    private final ClientAccountRepository accountRepo;
+    private final ATMAllocationRepository atmAllocationRepo;
     private final ATMRepository atmRepo;
     private final ClientRepository clientRepo;
     private final CurrencyConversionUtil currencyUtil;
 
     /**
      * Executes a withdrawal from a specified ATM and client account.
-     * Handles ATM availability, fund validation, and note calculations.
+     * Uses normalized entities (ClientAccount, Denomination, etc.).
      */
     @Override
     @Transactional
@@ -55,97 +45,105 @@ public class WithdrawServiceImpl implements WithdrawService {
         log.info("Starting withdrawal for clientId={}, account={}, amount={}, atmId={}",
                 request.clientId(), request.accountNumber(), request.amount(), request.atmId());
 
+        // Validate ATM is active
         ATM atm = atmRepo.findById(request.atmId())
                 .filter(ATM::isActive)
                 .orElseThrow(() -> new ATMNotFoundException(ErrorMessage.ATM_NOT_FOUND.get()));
 
-        Account acc = accountRepo.findByClientIdAndAccountNumber(request.clientId(), request.accountNumber())
+        // Lookup account by client and account number
+        ClientAccount account = accountRepo.findByClient_IdAndAccountNumber(request.clientId(), request.accountNumber())
+
                 .orElseThrow(() -> new AccountNotFoundException(ErrorMessage.ACCOUNT_NOT_FOUND.get()));
 
-        validateFunds(acc, request.amount());
+        // Check if account has enough funds (consider overdraft)
+        validateFunds(account, request.amount());
 
-        List<ATMNote> notes = atmNoteRepo.findByAtmId(request.atmId());
+        // Get available ATM allocations
+        List<ATMAllocation> allocations = atmAllocationRepo.findByAtm_Id(request.atmId());
+
+        // Calculate optimal notes to dispense
         Map<Integer, Integer> dispensed;
-
         try {
-            dispensed = NoteCalculator.calculate(request.amount(), notes);
+            dispensed = NoteCalculator.calculate(request.amount(), allocations);
         } catch (NoteCalculationException e) {
-            // Try to suggest fallback amount and throw enriched exception
-            Optional<Integer> fallback = NoteCalculator.suggestFallbackAmount(request.amount(), notes);
+            Optional<Integer> fallback = NoteCalculator.suggestFallbackAmount(request.amount(), allocations);
             throw new NoteCalculationException(ErrorMessage.NOTE_CALCULATION_FAILED.get(), fallback.orElse(null));
         }
 
-        updateATMNotes(notes, dispensed);
-        updateAccountBalance(acc, request.amount());
+        // Update ATM inventory and account balance
+        updateATMInventory(allocations, dispensed);
+        updateAccountBalance(account, request.amount());
 
+        // Get client details
         Client client = clientRepo.findById(request.clientId())
                 .orElseThrow(() -> new AccountNotFoundException("Client not found"));
 
         ClientDto clientDto = new ClientDto(client.getId(), client.getTitle(), client.getName(), client.getSurname());
 
-        BigDecimal conversionRate = BigDecimal.valueOf(currencyUtil.getConversionRate(acc.getCurrency()));
-        BigDecimal zarBalance = BigDecimal.valueOf(acc.getBalance()).multiply(conversionRate);
+        // Convert to ZAR
+        BigDecimal rate = currencyUtil.getConversionRate(account.getCurrency().getCode());
+        BigDecimal balance = account.getDisplayBalance();
+        BigDecimal zarBalance = balance.multiply(rate);
 
+        // Build account DTO
         TransactionalAccountDto accountDto = new TransactionalAccountDto(
-                acc.getAccountNumber(),
-                acc.getAccountType().name(),
-                "Transactional Account",
-                acc.getCurrency().name(),
-                conversionRate,
-                BigDecimal.valueOf(acc.getBalance()),
+                account.getAccountNumber(),
+                account.getAccountType().getCode(),
+                account.getAccountType().getDescription(),
+                account.getCurrency().getCode(),
+                rate,
+                balance,
                 zarBalance,
-                BigDecimal.valueOf(0) // Account limit placeholder
+                BigDecimal.ZERO
         );
 
-        List<DenominationDto> denominationDtos = notes.stream()
-                .filter(n -> dispensed.containsKey(n.getDenomination()))
-                .map(n -> new DenominationDto(n.getId(), n.getDenomination(), dispensed.get(n.getDenomination())))
+        // Build denomination breakdown
+        List<DenominationDto> denominationDtos = allocations.stream()
+                .filter(a -> dispensed.containsKey(a.getDenomination().getValue().intValue()))
+                .map(a -> new DenominationDto(
+                        a.getDenomination().getId(),
+                        a.getDenomination().getValue().intValue(),
+                        dispensed.get(a.getDenomination().getValue().intValue())
+                ))
                 .collect(Collectors.toList());
 
-
         ResultDto result = new ResultDto(true, 200, "Withdrawal completed successfully");
+        log.info("Withdrawal successful. Dispensed={}, New balance={}", dispensed, account.getDisplayBalance());
 
-        log.info("Withdrawal successful. Dispensed notes={}, new balance={}", dispensed, acc.getBalance());
         return new WithdrawResponseWrapper(clientDto, accountDto, denominationDtos, result);
     }
 
     /**
-     * Ensures account has sufficient funds (allows overdraft for transactional accounts).
+     * Validates whether the account has enough funds for withdrawal.
+     * Allows overdraft for transactional accounts only.
      */
-    private void validateFunds(Account acc, double amount) {
-        double allowedLimit = acc.getAccountType() == AccountType.TRANSACTIONAL
-                ? Constants.OVERDRAFT_LIMIT  // Allow overdraft of up to -10,000 for transactional (cheque) accounts
-                : 0;// No overdraft for currency/loan accounts
+    private void validateFunds(ClientAccount acc, double amount) {
+        boolean isTransactional = acc.getAccountType().isTransactional();
+        double allowedLimit = isTransactional ? Constants.OVERDRAFT_LIMIT : 0.0;
 
-        // According to the spec, overdraft up to -10,000 is allowed for cheque accounts.
-        // In this implementation, we treat all TRANSACTIONAL accounts as cheque accounts by design.
-
-        double newBalance = acc.getBalance() - amount;
-
+        double newBalance = acc.getDisplayBalance().doubleValue() - amount;
         if (newBalance < allowedLimit) {
-            log.error("Insufficient funds: account={}, balance={}, requested={}, allowedLimit={}",
-                    acc.getAccountNumber(), acc.getBalance(), amount, allowedLimit);
+            log.error("Insufficient funds: balance={}, requested={}, allowedLimit={}",
+                    acc.getDisplayBalance(), amount, allowedLimit);
             throw new InsufficientFundsException(ErrorMessage.INSUFFICIENT_FUNDS.get());
         }
     }
 
     /**
-     * Deducts dispensed note quantities from ATM note inventory.
+     * Updates ATM allocations by deducting used note quantities.
      */
-    private void updateATMNotes(List<ATMNote> notes, Map<Integer, Integer> dispensed) {
-        dispensed.forEach((den, qty) -> {
-            notes.stream()
-                    .filter(n -> n.getDenomination().equals(den))
-                    .findFirst()
-                    .ifPresent(n -> n.setQuantity(n.getQuantity() - qty));
-        });
+    private void updateATMInventory(List<ATMAllocation> allocations, Map<Integer, Integer> dispensed) {
+        dispensed.forEach((denVal, qty) -> allocations.stream()
+                .filter(a -> a.getDenomination().getValue().intValue() == denVal)
+                .findFirst()
+                .ifPresent(a -> a.setQuantity(a.getQuantity() - qty)));
     }
 
     /**
-     * Updates and saves new account balance after withdrawal.
+     * Deducts withdrawal amount from the account and persists the change.
      */
-    private void updateAccountBalance(Account acc, double amount) {
-        acc.setBalance(acc.getBalance() - amount);
+    private void updateAccountBalance(ClientAccount acc, double amount) {
+        acc.setDisplayBalance(acc.getDisplayBalance().subtract(BigDecimal.valueOf(amount)));
         accountRepo.save(acc);
     }
 }

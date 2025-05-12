@@ -1,7 +1,9 @@
+// Updated BalanceControllerTest to assert structured error response on NoAccountsFoundException
 package com.bank.balancedispense.controller;
 
 import com.bank.balancedispense.controllers.BalanceController;
 import com.bank.balancedispense.dto.*;
+import com.bank.balancedispense.exceptions.NoAccountsFoundException;
 import com.bank.balancedispense.services.BalanceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,8 +21,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Unit tests for BalanceController using MockMvc.
- * Tests both transactional and currency balance endpoints.
+ * Unit tests for {@link BalanceController} using MockMvc.
+ * Validates correct behavior for balance retrieval and error responses.
  */
 @WebMvcTest(BalanceController.class)
 public class BalanceControllerTest {
@@ -31,10 +33,6 @@ public class BalanceControllerTest {
     @MockBean
     private BalanceService balanceService;
 
-    /**
-     * Test successful response from /queryTransactionalBalances endpoint.
-     * Verifies correct mapping of client and account fields in response JSON.
-     */
     @Test
     void testGetTransactionalBalances() throws Exception {
         ClientDto client = new ClientDto(1L, "Mr", "John", "Doe");
@@ -60,14 +58,9 @@ public class BalanceControllerTest {
                 .andExpect(jsonPath("$.result.success").value(true));
     }
 
-    /**
-     * Test successful response from /queryCcyBalances endpoint.
-     * Ensures currency balances and conversions are serialized correctly.
-     */
     @Test
     void testGetCurrencyBalances() throws Exception {
         ClientDto client = new ClientDto(1L, "Mr", "John", "Doe");
-
         List<CurrencyBalanceResponse> accounts = List.of(
                 new CurrencyBalanceResponse(
                         "FX12345",
@@ -97,20 +90,18 @@ public class BalanceControllerTest {
                 .andExpect(jsonPath("$.result.statusCode").value(200));
     }
 
-    /**
-     * Test error scenario when clientId is valid but client does not exist.
-     */
     @Test
     void testGetTransactionalBalances_notFound() throws Exception {
-        when(balanceService.getTransactionalBalances(999L)).thenThrow(new RuntimeException("Client not found"));
+        when(balanceService.getTransactionalBalances(999L))
+                .thenThrow(new NoAccountsFoundException("No transactional accounts found."));
 
         mockMvc.perform(get("/discovery-atm/queryTransactionalBalances?clientId=999"))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.statusCode").value(400))
+                .andExpect(jsonPath("$.statusReason").value("No transactional accounts found."));
     }
 
-    /**
-     * Test validation failure when clientId is missing in request.
-     */
     @Test
     void testGetTransactionalBalances_invalidClientId_shouldFailValidation() throws Exception {
         mockMvc.perform(get("/discovery-atm/queryTransactionalBalances"))
