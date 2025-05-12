@@ -1,24 +1,24 @@
 # 💳 Bank Balance and Dispensing System
 
-This project is a Java Spring Boot backend system that simulates core ATM functionality. It enables clients to:
+This Spring Boot backend simulates ATM functionality for Discovery Bank, allowing clients to:
 
-* View **transactional** and **currency account balances**
-* Make **cash withdrawals** from transactional accounts
-* Retrieve **note denominations** dispensed
-* Access **SQL reports** for financial insights
+- ✅ View **transactional** and **currency account balances** (with Rand conversions)
+- ✅ Perform **cash withdrawals** from transactional accounts
+- ✅ Retrieve **dispensed denominations**
+- ✅ Generate SQL-based **financial reports**
 
 ---
 
 ## 🛠️ Technologies Used
 
-* Java 17
-* Spring Boot 3.4.x
-* Spring Data JPA
-* H2 In-Memory Database
-* SpringDoc OpenAPI (Swagger UI)
-* Lombok
-* JUnit & Mockito
-* Testcontainers (optional)
+- Java 17
+- Spring Boot 3.2+
+- Spring Data JPA
+- H2 In-Memory Database
+- SpringDoc OpenAPI (Swagger UI)
+- Lombok
+- JUnit, Mockito
+- Testcontainers (optional)
 
 ---
 
@@ -26,42 +26,45 @@ This project is a Java Spring Boot backend system that simulates core ATM functi
 
 ### ✅ Prerequisites
 
-* Java 17+
-* Maven 3.8+
-* IDE (e.g., IntelliJ, VS Code)
+- Java 17+
+- Maven 3.8+
+- IDE (IntelliJ / VS Code)
 
-### 📦 Run Locally
+### ▶️ Run Locally
 
 ```bash
-
-# Run the application
+# Run Spring Boot application
 mvn spring-boot:run
 ```
+
+Access H2 console: [http://localhost:8080/h2-console](http://localhost:8080/h2-console)
 
 ---
 
 ## 🔍 API Endpoints
 
-### 💼 Balance
+Base URL: `http://localhost:8080/discovery-atm`
 
-| Method | Endpoint                             | Description                                  |
-| ------ | ------------------------------------ | -------------------------------------------- |
-| `GET`  | `/balances/transactional?clientId=1` | View transactional account balances          |
-| `GET`  | `/balances/currency?clientId=1`      | View currency accounts with Rand conversions |
+### 💼 Balance APIs
 
-### 💸 Withdraw
+| Method | Endpoint                                 | Description                                              |
+|--------|------------------------------------------|----------------------------------------------------------|
+| GET    | `/queryTransactionalBalances?clientId=1` | View transactional account balances (descending order)   |
+| GET    | `/queryCcyBalances?clientId=1`           | View currency balances with converted Rand (ascending)   |
 
-| Method | Endpoint    | Description                         |
-| ------ | ----------- | ----------------------------------- |
-| `POST` | `/withdraw` | Withdraw from transactional account |
+### 💸 Withdraw API
 
-#### Example Request:
+| Method | Endpoint      | Description                         |
+|--------|---------------|-------------------------------------|
+| POST   | `/withdraw`   | Withdraw cash and get denominations |
+
+#### Example Withdraw Request
 
 ```json
 {
   "clientId": 1,
   "accountNumber": "TX12345",
-  "amount": 200.0,
+  "amount": 500.0,
   "atmId": 1
 }
 ```
@@ -70,26 +73,12 @@ mvn spring-boot:run
 
 ## 📊 SQL Reports
 
-### 1. Client Net Position
-
-Shows total loan, transactional, and net balances.
-
-```sql
-SELECT CONCAT(c.title, ' ', c.name, ' ', c.surname) AS client,
-       SUM(CASE WHEN a.account_type = 'LOAN' THEN a.balance ELSE 0 END) AS loan_balance,
-       SUM(CASE WHEN a.account_type = 'TRANSACTIONAL' THEN a.balance ELSE 0 END) AS transactional_balance,
-       SUM(CASE WHEN a.account_type IN ('TRANSACTIONAL', 'LOAN') THEN a.balance ELSE 0 END) AS net_position
-FROM client c
-         JOIN account a ON c.id = a.client_id
-GROUP BY c.id, c.title, c.name, c.surname;
-```
-
-### 2. Highest Transactional Account Per Client
+### 1. Highest Transactional Account Per Client
 
 ```sql
 SELECT c.id AS client_id, c.surname, a.account_number, a.description, a.balance
 FROM client c
-         JOIN account a ON c.id = a.client_id
+JOIN account a ON c.id = a.client_id
 WHERE a.account_type = 'TRANSACTIONAL'
   AND a.balance = (
     SELECT MAX(balance)
@@ -98,17 +87,31 @@ WHERE a.account_type = 'TRANSACTIONAL'
 );
 ```
 
+### 2. Aggregate Financial Position
+
+```sql
+SELECT CONCAT(c.title, ' ', c.name, ' ', c.surname) AS client,
+       SUM(CASE WHEN a.account_type = 'LOAN' THEN a.balance ELSE 0 END) AS loan_balance,
+       SUM(CASE WHEN a.account_type = 'TRANSACTIONAL' THEN a.balance ELSE 0 END) AS transactional_balance,
+       SUM(CASE WHEN a.account_type IN ('TRANSACTIONAL', 'LOAN') THEN a.balance ELSE 0 END) AS net_position
+FROM client c
+JOIN account a ON c.id = a.client_id
+GROUP BY c.id, c.title, c.name, c.surname;
+```
+
 ---
 
-## 🔒 Exception Handling
+## ❗ Exception Handling
 
-* `AccountNotFoundException`
-* `ATMNotFoundException`
-* `InsufficientFundsException`
-* `NoteCalculationException`
-* `NoAccountsFoundException`
+Custom exceptions include:
 
-Handled globally using `@RestControllerAdvice`.
+- `AccountNotFoundException`
+- `ATMNotFoundException`
+- `InsufficientFundsException`
+- `NoteCalculationException`
+- `NoAccountsFoundException`
+
+Handled globally with `@RestControllerAdvice`.
 
 ---
 
@@ -120,31 +123,26 @@ Accessible at:
 http://localhost:8080/swagger-ui.html
 ```
 
-Includes:
+Provides:
 
-* API summaries
-* Response schemas
-* Validation annotations
+- Endpoint summaries
+- Input validation details
+- Sample requests & responses
 
 ---
 
 ## 🧪 Testing
 
 ### ✅ Unit Tests
-
-* `BalanceServiceImplTest`
-* `WithdrawServiceImplTest`
-* `NoteCalculatorTest`
+- `BalanceServiceImplTest`
+- `WithdrawServiceImplTest`
+- `NoteCalculatorTest`
 
 ### ✅ Integration Tests
+- `BalanceControllerIntegrationTest`
+- `WithdrawControllerIntegrationTest`
 
-* `BalanceIntegrationTest`
-
-    * `/balances/transactional`
-    * `/balances/currency`
-    * `/withdraw`
-
-To run tests:
+Run all tests with:
 
 ```bash
 mvn test
@@ -152,23 +150,31 @@ mvn test
 
 ---
 
-## 🧩 Future Enhancements (Optional)
+## 🔮 Optional Future Enhancements
 
-* JWT Authentication / Authorization
-* Docker Support
-* Frontend Web UI
-* External configuration service for exchange rates
+- JWT-based user authentication
+- Docker containerization
+- Admin reporting dashboard
+- Externalized currency service (REST/DB)
 
 ---
 
-## 👨‍💻 Author
+## 📂 GitHub Repository
 
-**Peter Ohwofasa**
-Pretoria, South Africa
+Project source code is hosted at:
+
+👉 [https://github.com/peterohwofasa/Bank-Balance-and-Dispensing-System.git](https://github.com/peterohwofasa/Bank-Balance-and-Dispensing-System.git)
+
+---
+
+## 👤 Author
+
+**Peter Ohwofasa**  
+Pretoria, South Africa  
 [LinkedIn](https://www.linkedin.com/in/peter-ohwofasa/)
 
 ---
 
 ## 📄 License
 
-This project is open source and available under the Discovery License.
+This project is developed for Discovery Bank technical evaluation purposes.

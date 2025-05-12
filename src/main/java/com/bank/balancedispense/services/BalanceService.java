@@ -1,7 +1,7 @@
 package com.bank.balancedispense.services;
 
-import com.bank.balancedispense.dto.TransactionalBalanceResponse;
-import com.bank.balancedispense.dto.CurrencyBalanceResponse;
+import com.bank.balancedispense.dto.TransactionalBalanceResponseWrapper;
+import com.bank.balancedispense.dto.CurrencyBalanceResponseWrapper;
 
 import java.util.List;
 
@@ -9,13 +9,14 @@ import java.util.List;
  * Service interface for retrieving account balances for a client.
  */
 public interface BalanceService {
-    /**
-     * Service interface for retrieving account balances for a client.
-     */
-    List<TransactionalBalanceResponse> getTransactionalBalances(Long clientId);
 
     /**
-     * Returns all foreign currency account balances with conversion to ZAR.
+     * Returns transactional balances wrapped with client and result metadata.
      */
-    List<CurrencyBalanceResponse> getCurrencyBalances(Long clientId);
+    TransactionalBalanceResponseWrapper getTransactionalBalances(Long clientId);
+
+    /**
+     * Returns currency balances wrapped with client and result metadata.
+     */
+    CurrencyBalanceResponseWrapper getCurrencyBalances(Long clientId);
 }

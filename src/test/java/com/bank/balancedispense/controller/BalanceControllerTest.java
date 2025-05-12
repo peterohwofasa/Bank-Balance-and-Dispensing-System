@@ -1,27 +1,27 @@
 package com.bank.balancedispense.controller;
 
 import com.bank.balancedispense.controllers.BalanceController;
-import com.bank.balancedispense.dto.TransactionalBalanceResponse;
-import com.bank.balancedispense.dto.CurrencyBalanceResponse;
+import com.bank.balancedispense.dto.*;
 import com.bank.balancedispense.services.BalanceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 
+import java.math.BigDecimal;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
  * Unit tests for BalanceController using MockMvc.
  * Tests both transactional and currency balance endpoints.
  */
-@SuppressWarnings("removal")
 @WebMvcTest(BalanceController.class)
 public class BalanceControllerTest {
 
@@ -32,46 +32,90 @@ public class BalanceControllerTest {
     private BalanceService balanceService;
 
     /**
-     * Tests the /balances/transactional endpoint for a successful response.
-     * Validates JSON structure and field values.
+     * Test successful response from /queryTransactionalBalances endpoint.
+     * Verifies correct mapping of client and account fields in response JSON.
      */
     @Test
     void testGetTransactionalBalances() throws Exception {
-        List<TransactionalBalanceResponse> responses = List.of(
-                new TransactionalBalanceResponse("TX12345", "Main Account", 2000.0)
+        ClientDto client = new ClientDto(1L, "Mr", "John", "Doe");
+        TransactionalAccountDto account = new TransactionalAccountDto(
+                "TX12345", "TRANSACTIONAL", "Main Account",
+                "ZAR", BigDecimal.valueOf(1.0),
+                BigDecimal.valueOf(2000.0), BigDecimal.valueOf(2000.0), BigDecimal.ZERO
+        );
+        ResultDto result = new ResultDto(true, 200, "Success");
+        TransactionalBalanceResponseWrapper wrapper = new TransactionalBalanceResponseWrapper(
+                client,
+                List.of(account),
+                result
         );
 
-        // Mock the service method call
-        when(balanceService.getTransactionalBalances(1L)).thenReturn(responses);
+        when(balanceService.getTransactionalBalances(1L)).thenReturn(wrapper);
 
-        // Perform GET request and validate response fields
-        mockMvc.perform(get("/balances/transactional?clientId=1"))
+        mockMvc.perform(get("/discovery-atm/queryTransactionalBalances?clientId=1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].accountNumber").value("TX12345"))
-                .andExpect(jsonPath("$[0].description").value("Main Account"))
-                .andExpect(jsonPath("$[0].balance").value(2000.0));
+                .andExpect(jsonPath("$.client.name").value("John"))
+                .andExpect(jsonPath("$.accounts[0].accountNumber").value("TX12345"))
+                .andExpect(jsonPath("$.accounts[0].zarBalance").value(2000.0))
+                .andExpect(jsonPath("$.result.success").value(true));
     }
 
     /**
-     * Tests the /balances/currency endpoint for a successful response.
-     * Ensures converted values are returned as expected.
+     * Test successful response from /queryCcyBalances endpoint.
+     * Ensures currency balances and conversions are serialized correctly.
      */
     @Test
     void testGetCurrencyBalances() throws Exception {
-        List<CurrencyBalanceResponse> responses = List.of(
-                new CurrencyBalanceResponse("FX12345", "USD Account", 100.0, 1850.0)
+        ClientDto client = new ClientDto(1L, "Mr", "John", "Doe");
+
+        List<CurrencyBalanceResponse> accounts = List.of(
+                new CurrencyBalanceResponse(
+                        "FX12345",
+                        "CURRENCY",
+                        "Currency Account",
+                        "USD",
+                        BigDecimal.valueOf(18.5),
+                        BigDecimal.valueOf(100.0),
+                        BigDecimal.valueOf(1850.0),
+                        BigDecimal.ZERO
+                )
         );
 
-        // Mock the service call
-        when(balanceService.getCurrencyBalances(1L)).thenReturn(responses);
+        ResultDto result = new ResultDto(true, 200, "Currency balances retrieved successfully");
+        CurrencyBalanceResponseWrapper wrapper = new CurrencyBalanceResponseWrapper(client, accounts, result);
 
-        // Perform GET request and check response structure and content
-        mockMvc.perform(get("/balances/currency?clientId=1"))
+        when(balanceService.getCurrencyBalances(1L)).thenReturn(wrapper);
+
+        mockMvc.perform(get("/discovery-atm/queryCcyBalances?clientId=1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].accountNumber").value("FX12345"))
-                .andExpect(jsonPath("$[0].description").value("USD Account"))
-                .andExpect(jsonPath("$[0].foreignBalance").value(100.0))
-                .andExpect(jsonPath("$[0].convertedToRand").value(1850.0));
+                .andExpect(jsonPath("$.client.name").value("John"))
+                .andExpect(jsonPath("$.accounts[0].accountNumber").value("FX12345"))
+                .andExpect(jsonPath("$.accounts[0].currencyCode").value("USD"))
+                .andExpect(jsonPath("$.accounts[0].balance").value(100.0))
+                .andExpect(jsonPath("$.accounts[0].zarBalance").value(1850.0))
+                .andExpect(jsonPath("$.result.success").value(true))
+                .andExpect(jsonPath("$.result.statusCode").value(200));
+    }
+
+    /**
+     * Test error scenario when clientId is valid but client does not exist.
+     */
+    @Test
+    void testGetTransactionalBalances_notFound() throws Exception {
+        when(balanceService.getTransactionalBalances(999L)).thenThrow(new RuntimeException("Client not found"));
+
+        mockMvc.perform(get("/discovery-atm/queryTransactionalBalances?clientId=999"))
+                .andExpect(status().isInternalServerError());
+    }
+
+    /**
+     * Test validation failure when clientId is missing in request.
+     */
+    @Test
+    void testGetTransactionalBalances_invalidClientId_shouldFailValidation() throws Exception {
+        mockMvc.perform(get("/discovery-atm/queryTransactionalBalances"))
+                .andExpect(status().isBadRequest())
+                .andExpect(result -> assertTrue(result.getResolvedException() instanceof MissingServletRequestParameterException))
+                .andExpect(result -> assertTrue(result.getResolvedException().getMessage().contains("clientId")));
     }
 }
-

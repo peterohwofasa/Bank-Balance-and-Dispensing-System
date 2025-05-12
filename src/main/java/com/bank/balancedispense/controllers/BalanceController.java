@@ -1,48 +1,67 @@
 package com.bank.balancedispense.controllers;
 
-import com.bank.balancedispense.dto.CurrencyBalanceResponse;
-import com.bank.balancedispense.dto.TransactionalBalanceResponse;
+import com.bank.balancedispense.dto.CurrencyBalanceResponseWrapper;
+import com.bank.balancedispense.dto.ErrorResponse;
+import com.bank.balancedispense.dto.TransactionalBalanceResponseWrapper;
 import com.bank.balancedispense.services.BalanceService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Min;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
-/**
- * REST controller for retrieving client balances.
- * Supports both transactional and foreign currency balances.
- */
 @RestController
-@RequestMapping("/balances")
+@RequestMapping("/discovery-atm")
 @Validated
+@Tag(name = "Balance API", description = "Endpoints for retrieving account balances")
 public class BalanceController {
 
     @Autowired
     private BalanceService balanceService;
 
-    /**
-     * Endpoint to retrieve all transactional accounts for a given client.
-     * @param clientId Client ID (must be >= 1)
-     */
-    @Operation(summary = "Get all transactional balances for a client")
-    @ApiResponse(responseCode = "200", description = "Successful retrieval")
-    @GetMapping("/transactional")
-    public List<TransactionalBalanceResponse> getTransactionalBalances(@RequestParam @Min(1) Long clientId) {
-        return balanceService.getTransactionalBalances(clientId);
+    @Operation(
+            summary = "Get all transactional balances for a client",
+            description = "Returns all transactional accounts with available balances, sorted in descending order by balance."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Successful retrieval",
+                    content = @Content(schema = @Schema(implementation = TransactionalBalanceResponseWrapper.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid client ID",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No accounts found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping(value = "/queryTransactionalBalances", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<TransactionalBalanceResponseWrapper> getTransactionalBalances(
+            @Parameter(description = "Client ID", required = true, example = "12345")
+            @RequestParam @Min(1) Long clientId) {
+        return ResponseEntity.ok(balanceService.getTransactionalBalances(clientId));
     }
 
-    /**
-     * Endpoint to retrieve all currency accounts with ZAR conversion.
-     * @param clientId Client ID (must be >= 1)
-     */
-    @Operation(summary = "Get all currency balances for a client with converted Rand values")
-    @ApiResponse(responseCode = "200", description = "Successful retrieval")
-    @GetMapping("/currency")
-    public List<CurrencyBalanceResponse> getCurrencyBalances(@RequestParam @Min(1) Long clientId) {
-        return balanceService.getCurrencyBalances(clientId);
+    @Operation(
+            summary = "Get all currency balances for a client with converted Rand values",
+            description = "Returns all currency accounts with original and ZAR-converted balances, sorted by ZAR amount."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Successful retrieval",
+                    content = @Content(schema = @Schema(implementation = CurrencyBalanceResponseWrapper.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid client ID",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No accounts found",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping(value = "/queryCcyBalances", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<CurrencyBalanceResponseWrapper> getCurrencyBalances(
+            @Parameter(description = "Client ID", required = true, example = "12345")
+            @RequestParam @Min(1) Long clientId) {
+        return ResponseEntity.ok(balanceService.getCurrencyBalances(clientId));
     }
 }

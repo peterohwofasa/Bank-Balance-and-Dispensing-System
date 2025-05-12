@@ -2,10 +2,8 @@ package com.bank.balancedispense.entities;
 
 import com.bank.balancedispense.enums.AccountType;
 import com.bank.balancedispense.enums.Currency; // ✅ Correct custom import
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -20,6 +18,7 @@ import lombok.Setter;
 @Entity
 public class Account {
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @NotNull
@@ -31,7 +30,7 @@ public class Account {
     private String description;
 
     @NotNull
-    @Size(min = 1)
+    @DecimalMin(value = "0.0", inclusive = true)
     private Double balance;
 
     @Enumerated(EnumType.STRING)

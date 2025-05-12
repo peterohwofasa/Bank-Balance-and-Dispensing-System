@@ -1,11 +1,11 @@
 package com.bank.balancedispense.services;
 
 import com.bank.balancedispense.dto.WithdrawRequest;
-import com.bank.balancedispense.dto.WithdrawResponse;
+import com.bank.balancedispense.dto.WithdrawResponseWrapper;
 
 /**
  * Service interface for processing ATM withdrawal requests.
  */
 public interface WithdrawService {
-    WithdrawResponse withdraw(WithdrawRequest request);
+    WithdrawResponseWrapper withdraw(WithdrawRequest request);
 }
